@@ -1,0 +1,979 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ZAOUJAL AI — Operations Center</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    /* ── Variables ─────────────────────────────────────────── */
+    :root {
+      --black:      #000000;
+      --panel:      #080808;
+      --border:     #141414;
+      --border-mid: #1e1e1e;
+      --red:        #ff1a1a;
+      --red-dim:    #3d0000;
+      --green:      #00ff88;
+      --amber:      #ffaa00;
+      --white:      #ffffff;
+      --grey-dim:   #1a1a1a;
+      --grey-text:  #555555;
+      --grey-mid:   #888888;
+      --mono:       'Courier New', Courier, monospace;
+      --serif:      Georgia, 'Times New Roman', serif;
+      --sidebar-w:  260px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      background: var(--black);
+      color: var(--white);
+      font-family: var(--mono);
+      overflow: hidden;
+    }
+
+    /* Scanlines */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background: repeating-linear-gradient(
+        0deg, transparent, transparent 2px,
+        rgba(255,255,255,0.008) 2px, rgba(255,255,255,0.008) 4px
+      );
+      pointer-events: none;
+      z-index: 9999;
+    }
+
+    ::selection { background: var(--red); color: var(--black); }
+
+    /* ── LAYOUT ────────────────────────────────────────────── */
+    #shell {
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* ── SIDEBAR ───────────────────────────────────────────── */
+    #sidebar {
+      width: var(--sidebar-w);
+      min-width: var(--sidebar-w);
+      background: var(--panel);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      overflow-x: hidden;
+      transition: transform 0.28s ease;
+      z-index: 50;
+    }
+
+    .sidebar-logo {
+      padding: 1.4rem 1.4rem 1rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .sidebar-logo .name {
+      font-family: var(--serif);
+      font-size: 1rem;
+      letter-spacing: 0.15em;
+    }
+    .sidebar-logo .name span { color: var(--red); }
+    .sidebar-logo .tagline {
+      font-size: 0.55rem;
+      letter-spacing: 0.25em;
+      color: var(--grey-text);
+      text-transform: uppercase;
+      margin-top: 0.3rem;
+    }
+
+    /* Credits block */
+    .credits-block {
+      margin: 1rem 1rem 0.5rem;
+      border: 1px solid var(--border-mid);
+      padding: 1rem;
+      background: var(--black);
+    }
+    .credits-label {
+      font-size: 0.55rem;
+      letter-spacing: 0.3em;
+      text-transform: uppercase;
+      color: var(--grey-text);
+      margin-bottom: 0.6rem;
+    }
+    .credits-display {
+      display: flex;
+      align-items: baseline;
+      gap: 0.4rem;
+    }
+    .credits-num {
+      font-family: var(--serif);
+      font-size: 2.2rem;
+      color: var(--red);
+      line-height: 1;
+      transition: color 0.3s;
+    }
+    .credits-num.low { color: var(--amber); }
+    .credits-num.empty { color: #333; }
+    .credits-max { font-size: 0.65rem; color: var(--grey-text); }
+
+    /* Credit pips */
+    .credit-pips {
+      display: flex;
+      gap: 3px;
+      margin-top: 0.7rem;
+      flex-wrap: wrap;
+    }
+    .pip {
+      width: 14px; height: 4px;
+      background: var(--red);
+      transition: background 0.3s;
+    }
+    .pip.empty { background: #1a1a1a; }
+
+    /* Language selector */
+    .lang-block {
+      margin: 0 1rem 0.5rem;
+    }
+    .lang-label {
+      font-size: 0.55rem;
+      letter-spacing: 0.3em;
+      text-transform: uppercase;
+      color: var(--grey-text);
+      margin-bottom: 0.5rem;
+    }
+    .lang-select {
+      width: 100%;
+      background: var(--black);
+      border: 1px solid var(--border-mid);
+      color: var(--white);
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      padding: 0.5rem 0.7rem;
+      outline: none;
+      cursor: pointer;
+      appearance: none;
+      -webkit-appearance: none;
+    }
+    .lang-select:focus { border-color: var(--red); }
+
+    /* Mode nav */
+    .nav-section-label {
+      padding: 1rem 1.4rem 0.4rem;
+      font-size: 0.52rem;
+      letter-spacing: 0.35em;
+      text-transform: uppercase;
+      color: var(--grey-text);
+    }
+
+    .mode-btn {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.9rem;
+      padding: 0.85rem 1.4rem;
+      background: none;
+      border: none;
+      border-left: 2px solid transparent;
+      cursor: pointer;
+      width: 100%;
+      text-align: left;
+      transition: all 0.15s;
+    }
+    .mode-btn:hover { background: rgba(255,255,255,0.02); }
+    .mode-btn.active {
+      border-left-color: var(--red);
+      background: rgba(255,26,26,0.04);
+    }
+
+    .mode-icon {
+      font-size: 0.85rem;
+      margin-top: 1px;
+    }
+
+    .mode-info {}
+    .mode-info .m-name {
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      color: var(--white);
+      letter-spacing: 0.05em;
+    }
+    .mode-info .m-sub {
+      font-size: 0.58rem;
+      color: var(--grey-text);
+      margin-top: 0.2rem;
+      letter-spacing: 0.05em;
+    }
+
+    .mode-badge {
+      margin-left: auto;
+      margin-top: 2px;
+      font-size: 0.48rem;
+      padding: 0.15rem 0.4rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+    }
+    .mode-badge.pro-badge {
+      border: 1px solid var(--red-dim);
+      color: var(--red);
+    }
+    .mode-badge.free-badge {
+      border: 1px solid #1a1a1a;
+      color: var(--grey-text);
+    }
+
+    /* Sidebar footer */
+    .sidebar-footer {
+      margin-top: auto;
+      border-top: 1px solid var(--border);
+      padding: 1rem 1.4rem;
+    }
+    .user-info {
+      display: flex;
+      align-items: center;
+      gap: 0.7rem;
+      margin-bottom: 0.8rem;
+    }
+    .user-avatar {
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      background: var(--red-dim);
+      border: 1px solid var(--red);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.65rem;
+      color: var(--red);
+      flex-shrink: 0;
+    }
+    .user-email {
+      font-size: 0.62rem;
+      color: var(--grey-mid);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .logout-btn {
+      width: 100%;
+      padding: 0.5rem;
+      background: none;
+      border: 1px solid #1a1a1a;
+      color: var(--grey-text);
+      font-family: var(--mono);
+      font-size: 0.58rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .logout-btn:hover { border-color: var(--red); color: var(--red); }
+
+    /* ── MAIN PANEL ────────────────────────────────────────── */
+    #main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      min-width: 0;
+    }
+
+    /* Top bar */
+    #topbar {
+      height: 52px;
+      min-height: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 1.5rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel);
+    }
+
+    .topbar-left {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    #menuToggle {
+      display: none;
+      background: none;
+      border: 1px solid var(--border-mid);
+      color: var(--white);
+      font-family: var(--mono);
+      font-size: 1rem;
+      cursor: pointer;
+      padding: 0.2rem 0.5rem;
+    }
+
+    .topbar-mode {
+      font-size: 0.65rem;
+      letter-spacing: 0.3em;
+      text-transform: uppercase;
+      color: var(--grey-text);
+    }
+    .topbar-mode span { color: var(--white); }
+
+    .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .status-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--green);
+      animation: pulse-dot 2s ease-in-out infinite;
+    }
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.3; }
+    }
+
+    .topbar-status {
+      font-size: 0.58rem;
+      letter-spacing: 0.2em;
+      color: var(--grey-text);
+      text-transform: uppercase;
+    }
+
+    /* ── CHAT AREA ─────────────────────────────────────────── */
+    #chatArea {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.2rem;
+      scroll-behavior: smooth;
+    }
+
+    /* Mode intro banner */
+    .mode-banner {
+      border: 1px solid var(--border-mid);
+      padding: 1.4rem 1.6rem;
+      background: var(--panel);
+      position: relative;
+      overflow: hidden;
+    }
+    .mode-banner::before {
+      content: '';
+      position: absolute; top: 0; left: 0;
+      width: 100%; height: 2px;
+      background: var(--red);
+    }
+    .banner-tag {
+      font-size: 0.55rem;
+      letter-spacing: 0.35em;
+      text-transform: uppercase;
+      color: var(--red);
+      margin-bottom: 0.7rem;
+    }
+    .banner-title {
+      font-family: var(--serif);
+      font-size: 1.2rem;
+      margin-bottom: 0.4rem;
+    }
+    .banner-desc {
+      font-size: 0.68rem;
+      color: var(--grey-mid);
+      line-height: 1.7;
+    }
+
+    /* Chat messages */
+    .msg {
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+      max-width: 860px;
+    }
+
+    .msg-meta {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      font-size: 0.55rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+    }
+
+    .msg-meta .role { }
+    .msg-meta .role.user-role { color: var(--grey-mid); }
+    .msg-meta .role.ai-role   { color: var(--red); }
+
+    .msg-meta .ts { color: #333; }
+
+    .msg-bubble {
+      padding: 1rem 1.2rem;
+      font-size: 0.78rem;
+      line-height: 1.8;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .msg.user .msg-bubble {
+      background: var(--grey-dim);
+      border: 1px solid var(--border-mid);
+      border-left: 2px solid var(--grey-mid);
+      color: var(--grey-mid);
+    }
+
+    .msg.ai .msg-bubble {
+      background: var(--panel);
+      border: 1px solid var(--border-mid);
+      border-left: 2px solid var(--red);
+      color: var(--white);
+    }
+
+    /* Typing indicator */
+    .typing-indicator {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.8rem 1.2rem;
+      font-size: 0.65rem;
+      color: var(--grey-text);
+      letter-spacing: 0.15em;
+    }
+    .typing-dots {
+      display: flex; gap: 4px;
+    }
+    .typing-dots span {
+      width: 4px; height: 4px;
+      border-radius: 50%;
+      background: var(--red);
+      animation: dotBounce 1.2s ease-in-out infinite;
+    }
+    .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+    .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes dotBounce {
+      0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
+      40%           { transform: translateY(-6px); opacity: 1; }
+    }
+
+    /* ── INPUT BAR ─────────────────────────────────────────── */
+    #inputBar {
+      border-top: 1px solid var(--border);
+      background: var(--panel);
+      padding: 1rem 1.5rem;
+    }
+
+    .input-wrapper {
+      display: flex;
+      align-items: flex-end;
+      gap: 0.8rem;
+      border: 1px solid var(--border-mid);
+      background: var(--black);
+      padding: 0.8rem 1rem;
+      transition: border-color 0.2s;
+    }
+    .input-wrapper:focus-within { border-color: #333; }
+
+    .input-prompt {
+      font-size: 0.72rem;
+      color: var(--red);
+      margin-bottom: 2px;
+      flex-shrink: 0;
+      line-height: 1.5;
+    }
+
+    #userInput {
+      flex: 1;
+      background: none;
+      border: none;
+      outline: none;
+      color: var(--white);
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      line-height: 1.6;
+      resize: none;
+      max-height: 140px;
+      min-height: 22px;
+    }
+    #userInput::placeholder { color: #2a2a2a; }
+
+    .send-btn {
+      flex-shrink: 0;
+      padding: 0.45rem 1rem;
+      background: var(--red);
+      color: var(--black);
+      border: none;
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: opacity 0.2s;
+      align-self: flex-end;
+    }
+    .send-btn:hover    { opacity: 0.85; }
+    .send-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+    .input-hint {
+      margin-top: 0.5rem;
+      font-size: 0.55rem;
+      letter-spacing: 0.15em;
+      color: #2a2a2a;
+    }
+    .input-hint span { color: var(--grey-text); }
+
+    /* ── NO CREDITS WALL ───────────────────────────────────── */
+    .credit-wall {
+      border: 1px solid var(--red-dim);
+      padding: 1.2rem 1.5rem;
+      background: rgba(139,0,0,0.06);
+      font-size: 0.7rem;
+      color: var(--red);
+      letter-spacing: 0.1em;
+      line-height: 1.8;
+      display: none;
+    }
+    .credit-wall.visible { display: block; }
+
+    /* ── MOBILE OVERLAY ────────────────────────────────────── */
+    #sidebarOverlay {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.7);
+      z-index: 40;
+    }
+
+    /* ── SCROLLBAR ─────────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: var(--black); }
+    ::-webkit-scrollbar-thumb { background: #1a1a1a; }
+    ::-webkit-scrollbar-thumb:hover { background: #333; }
+
+    /* ── RESPONSIVE ────────────────────────────────────────── */
+    @media (max-width: 768px) {
+      #sidebar {
+        position: fixed; left: 0; top: 0; bottom: 0;
+        transform: translateX(-100%);
+      }
+      #sidebar.open { transform: translateX(0); }
+      #sidebarOverlay { display: block; opacity: 0; pointer-events: none; transition: opacity 0.3s; }
+      #sidebarOverlay.open { opacity: 1; pointer-events: all; }
+      #menuToggle { display: block; }
+      #chatArea { padding: 1rem; }
+      #inputBar  { padding: 0.8rem 1rem; }
+    }
+  </style>
+</head>
+<body>
+
+<div id="shell">
+
+  <!-- ══ SIDEBAR ══════════════════════════════════════════ -->
+  <aside id="sidebar">
+    <div class="sidebar-logo">
+      <div class="name">ZAOUJAL<span>.</span>AI</div>
+      <div class="tagline">// OPERATIONS CENTER</div>
+    </div>
+
+    <!-- Credits -->
+    <div class="credits-block">
+      <div class="credits-label">// PRO CREDITS</div>
+      <div class="credits-display">
+        <span class="credits-num" id="creditsNum">—</span>
+        <span class="credits-max">/ 10</span>
+      </div>
+      <div class="credit-pips" id="creditPips"></div>
+    </div>
+
+    <!-- Language -->
+    <div class="lang-block">
+      <div class="lang-label">// LANGUAGE</div>
+      <select class="lang-select" id="langSelect">
+        <option value="en">🇺🇸 English</option>
+        <option value="fr">🇫🇷 Français</option>
+        <option value="ar">🇲🇦 العربية</option>
+        <option value="es">🇪🇸 Español</option>
+        <option value="de">🇩🇪 Deutsch</option>
+        <option value="zh">🇨🇳 中文</option>
+        <option value="pt">🇧🇷 Português</option>
+        <option value="it">🇮🇹 Italiano</option>
+      </select>
+    </div>
+
+    <!-- Mode navigation -->
+    <div class="nav-section-label">// SELECT MODE</div>
+
+    <button class="mode-btn active" data-mode="business" onclick="selectMode('business', this)">
+      <span class="mode-icon">⬡</span>
+      <div class="mode-info">
+        <div class="m-name">Business Auditor</div>
+        <div class="m-sub">Cynical financial teardown</div>
+      </div>
+      <span class="mode-badge pro-badge">PRO</span>
+    </button>
+
+    <button class="mode-btn" data-mode="idea" onclick="selectMode('idea', this)">
+      <span class="mode-icon">◈</span>
+      <div class="mode-info">
+        <div class="m-name">Idea Shredder</div>
+        <div class="m-sub">High-IQ assumption hunter</div>
+      </div>
+      <span class="mode-badge pro-badge">PRO</span>
+    </button>
+
+    <button class="mode-btn" data-mode="plan" onclick="selectMode('plan', this)">
+      <span class="mode-icon">◎</span>
+      <div class="mode-info">
+        <div class="m-name">Plan Sniper</div>
+        <div class="m-sub">Single-point failure finder</div>
+      </div>
+      <span class="mode-badge free-badge">FREE</span>
+    </button>
+
+    <button class="mode-btn" data-mode="roast" onclick="selectMode('roast', this)">
+      <span class="mode-icon">◐</span>
+      <div class="mode-info">
+        <div class="m-name">Fun Roast</div>
+        <div class="m-sub">Brutal & entertaining</div>
+      </div>
+      <span class="mode-badge free-badge">FREE</span>
+    </button>
+
+    <!-- Footer -->
+    <div class="sidebar-footer">
+      <div class="user-info">
+        <div class="user-avatar" id="userAvatar">?</div>
+        <div class="user-email" id="userEmail">loading...</div>
+      </div>
+      <button class="logout-btn" onclick="handleLogout()">// TERMINATE SESSION</button>
+    </div>
+  </aside>
+
+  <div id="sidebarOverlay" onclick="closeSidebar()"></div>
+
+  <!-- ══ MAIN ══════════════════════════════════════════════ -->
+  <main id="main">
+
+    <!-- Topbar -->
+    <div id="topbar">
+      <div class="topbar-left">
+        <button id="menuToggle" onclick="toggleSidebar()">☰</button>
+        <div class="topbar-mode">MODE: <span id="topbarMode">BUSINESS AUDITOR</span></div>
+      </div>
+      <div class="topbar-right">
+        <div class="status-dot"></div>
+        <div class="topbar-status">SYSTEM ONLINE</div>
+      </div>
+    </div>
+
+    <!-- Chat area -->
+    <div id="chatArea">
+      <!-- Mode banner injected here -->
+      <div id="modeBanner"></div>
+    </div>
+
+    <!-- Input -->
+    <div id="inputBar">
+      <div class="credit-wall" id="creditWall">
+        // INSUFFICIENT PRO CREDITS — This mode requires Pro Credits.<br>
+        You have used all 10 credits for this billing period.<br>
+        Switch to Plan Sniper or Fun Roast for unlimited free usage.
+      </div>
+      <div class="input-wrapper">
+        <span class="input-prompt">&gt;_</span>
+        <textarea
+          id="userInput"
+          rows="1"
+          placeholder="Describe your business, idea, or plan..."
+          onkeydown="handleKeydown(event)"
+          oninput="autoResize(this)"
+        ></textarea>
+        <button class="send-btn" id="sendBtn" onclick="sendMessage()">AUDIT</button>
+      </div>
+      <div class="input-hint">
+        <span id="modeHint">ENTER</span> to send &nbsp;·&nbsp; SHIFT+ENTER for new line
+        &nbsp;·&nbsp; <span id="modelHint">MODEL: GPT-OSS-120B (PRO)</span>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+  /* ── CONFIG ─────────────────────────────────────────────── */
+  const SUPABASE_URL  = 'https://YOUR_PROJECT.supabase.co';
+  const SUPABASE_ANON = 'YOUR_ANON_KEY';
+  const API_ENDPOINT  = '/api/chat';
+
+  const { createClient } = supabase;
+  const sb = createClient(SUPABASE_URL, SUPABASE_ANON);
+
+  /* ── STATE ──────────────────────────────────────────────── */
+  let currentMode    = 'business';
+  let proCredits     = 10;
+  let currentUser    = null;
+  let isLoading      = false;
+  let conversationHistory = [];
+
+  /* ── MODE CONFIGS ───────────────────────────────────────── */
+  const MODES = {
+    business: {
+      label: 'BUSINESS AUDITOR',
+      title: 'Business Auditor',
+      tag:   '// PRO MODE — 1 CREDIT PER QUERY',
+      desc:  'Submit your business model, pitch deck summary, or revenue plan. I will dissect every assumption, expose weak margins, and tear apart your moat claims.',
+      model: 'GPT-OSS-120B (PRO)',
+      isPro: true,
+      placeholder: 'e.g. "We are a SaaS for B2B HR teams, $99/mo, targeting SMBs..."',
+    },
+    idea: {
+      label: 'IDEA SHREDDER',
+      title: 'Idea Shredder',
+      tag:   '// PRO MODE — 1 CREDIT PER QUERY',
+      desc:  'Drop your startup idea. I will find the untested assumption, the misread market, the competitor you haven\'t googled, and the reason users won\'t actually pay.',
+      model: 'GPT-OSS-120B (PRO)',
+      isPro: true,
+      placeholder: 'e.g. "An app that lets restaurants manage their reservations with AI..."',
+    },
+    plan: {
+      label: 'PLAN SNIPER',
+      title: 'Plan Sniper',
+      tag:   '// FAST MODE — UNLIMITED',
+      desc:  'Describe your plan in detail. I will identify the single weakest link that will cause the entire structure to collapse. No hedging. One target. One shot.',
+      model: 'Llama-3.3-70B (FAST)',
+      isPro: false,
+      placeholder: 'e.g. "We plan to launch in Q1, partner with distributors, and hit 100k users by Q3..."',
+    },
+    roast: {
+      label: 'FUN ROAST',
+      title: 'Fun Roast',
+      tag:   '// FAST MODE — UNLIMITED',
+      desc:  'Bring your idea for a public execution. I will roast it in the style of a veteran investor who has heard this exact pitch 47 times and is running out of patience.',
+      model: 'Llama-3.3-70B (FAST)',
+      isPro: false,
+      placeholder: 'e.g. "I want to build an Uber for dog walkers but with blockchain..."',
+    },
+  };
+
+  /* ── INIT ───────────────────────────────────────────────── */
+  (async () => {
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) { window.location.href = 'index.html'; return; }
+
+    currentUser = session.user;
+    document.getElementById('userEmail').textContent = currentUser.email;
+    document.getElementById('userAvatar').textContent =
+      (currentUser.email || '?')[0].toUpperCase();
+
+    await loadCredits();
+    selectMode('business', document.querySelector('[data-mode="business"]'));
+  })();
+
+  /* ── CREDITS ────────────────────────────────────────────── */
+  async function loadCredits() {
+    const { data, error } = await sb
+      .from('profiles')
+      .select('pro_credits')
+      .eq('id', currentUser.id)
+      .single();
+
+    if (!error && data) {
+      proCredits = data.pro_credits;
+      updateCreditsUI();
+    }
+  }
+
+  function updateCreditsUI() {
+    const numEl  = document.getElementById('creditsNum');
+    const pipsEl = document.getElementById('creditPips');
+
+    numEl.textContent = proCredits;
+    numEl.className   = 'credits-num' +
+      (proCredits <= 0 ? ' empty' : proCredits <= 3 ? ' low' : '');
+
+    pipsEl.innerHTML = '';
+    for (let i = 0; i < 10; i++) {
+      const pip = document.createElement('div');
+      pip.className = 'pip' + (i >= proCredits ? ' empty' : '');
+      pipsEl.appendChild(pip);
+    }
+
+    updateCreditWall();
+  }
+
+  function updateCreditWall() {
+    const wall  = document.getElementById('creditWall');
+    const isPro = MODES[currentMode].isPro;
+    if (isPro && proCredits <= 0) {
+      wall.classList.add('visible');
+      document.getElementById('sendBtn').disabled = true;
+    } else {
+      wall.classList.remove('visible');
+      document.getElementById('sendBtn').disabled = false;
+    }
+  }
+
+  /* ── MODE SELECTION ─────────────────────────────────────── */
+  function selectMode(mode, btnEl) {
+    currentMode = mode;
+    conversationHistory = [];
+
+    document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+    if (btnEl) btnEl.classList.add('active');
+
+    const cfg = MODES[mode];
+    document.getElementById('topbarMode').textContent = cfg.label;
+    document.getElementById('modelHint').textContent  = 'MODEL: ' + cfg.model;
+    document.getElementById('userInput').placeholder  = cfg.placeholder;
+
+    // Banner
+    document.getElementById('modeBanner').innerHTML = `
+      <div class="mode-banner">
+        <div class="banner-tag">${cfg.tag}</div>
+        <div class="banner-title">${cfg.title}</div>
+        <div class="banner-desc">${cfg.desc}</div>
+      </div>
+    `;
+
+    // Clear old messages
+    const area = document.getElementById('chatArea');
+    Array.from(area.children).forEach(child => {
+      if (child.id !== 'modeBanner') child.remove();
+    });
+
+    updateCreditWall();
+    closeSidebar();
+  }
+
+  /* ── SEND MESSAGE ───────────────────────────────────────── */
+  async function sendMessage() {
+    const input = document.getElementById('userInput');
+    const text  = input.value.trim();
+    if (!text || isLoading) return;
+
+    const cfg = MODES[currentMode];
+    if (cfg.isPro && proCredits <= 0) return;
+
+    isLoading = true;
+    document.getElementById('sendBtn').disabled = true;
+    input.value = '';
+    input.style.height = 'auto';
+
+    const lang = document.getElementById('langSelect').value;
+
+    // User message
+    appendMessage('user', text);
+    conversationHistory.push({ role: 'user', content: text });
+
+    // Typing indicator
+    const typingEl = appendTyping();
+
+    try {
+      const res = await fetch(API_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode:     currentMode,
+          message:  text,
+          language: lang,
+          history:  conversationHistory.slice(-6),
+          userId:   currentUser.id,
+        }),
+      });
+
+      const json = await res.json();
+      typingEl.remove();
+
+      if (!res.ok) {
+        appendMessage('ai', `// ERROR ${res.status}: ${json.error || 'Unknown error'}`);
+      } else {
+        const reply = json.reply || '// No response received.';
+        appendMessage('ai', reply);
+        conversationHistory.push({ role: 'assistant', content: reply });
+
+        if (cfg.isPro && json.creditsRemaining !== undefined) {
+          proCredits = json.creditsRemaining;
+          updateCreditsUI();
+        }
+      }
+    } catch (err) {
+      typingEl.remove();
+      appendMessage('ai', `// NETWORK ERROR: ${err.message}`);
+    } finally {
+      isLoading = false;
+      updateCreditWall();
+      document.getElementById('sendBtn').disabled = false;
+    }
+  }
+
+  /* ── CHAT HELPERS ───────────────────────────────────────── */
+  function appendMessage(role, text) {
+    const area   = document.getElementById('chatArea');
+    const msgEl  = document.createElement('div');
+    msgEl.className = `msg ${role}`;
+
+    const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const roleLabel = role === 'user' ? '// OPERATOR' : `// ${MODES[currentMode].label}`;
+
+    msgEl.innerHTML = `
+      <div class="msg-meta">
+        <span class="role ${role}-role">${roleLabel}</span>
+        <span class="ts">${now}</span>
+      </div>
+      <div class="msg-bubble">${escapeHtml(text)}</div>
+    `;
+
+    area.appendChild(msgEl);
+    area.scrollTop = area.scrollHeight;
+    return msgEl;
+  }
+
+  function appendTyping() {
+    const area  = document.getElementById('chatArea');
+    const el    = document.createElement('div');
+    el.className = 'typing-indicator';
+    el.innerHTML = `
+      <span style="font-size:0.6rem;letter-spacing:.2em;color:#333">// PROCESSING</span>
+      <div class="typing-dots">
+        <span></span><span></span><span></span>
+      </div>
+    `;
+    area.appendChild(el);
+    area.scrollTop = area.scrollHeight;
+    return el;
+  }
+
+  function escapeHtml(str) {
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/\n/g, '<br>');
+  }
+
+  /* ── INPUT UTILS ────────────────────────────────────────── */
+  function handleKeydown(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  }
+
+  function autoResize(el) {
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 140) + 'px';
+  }
+
+  /* ── LOGOUT ─────────────────────────────────────────────── */
+  async function handleLogout() {
+    await sb.auth.signOut();
+    window.location.href = 'index.html';
+  }
+
+  /* ── MOBILE SIDEBAR ─────────────────────────────────────── */
+  function toggleSidebar() {
+    document.getElementById('sidebar').classList.toggle('open');
+    document.getElementById('sidebarOverlay').classList.toggle('open');
+  }
+  function closeSidebar() {
+    document.getElementById('sidebar').classList.remove('open');
+    document.getElementById('sidebarOverlay').classList.remove('open');
+  }
+</script>
+</body>
+</html>
