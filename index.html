@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ZAOUJAL AI — Brutal Logic Auditor</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    /* ── Variables ─────────────────────────────────────────── */
+    :root {
+      --black:       #000000;
+      --red:         #ff1a1a;
+      --red-dim:     #8b0000;
+      --white:       #ffffff;
+      --grey-dim:    #1a1a1a;
+      --grey-mid:    #2e2e2e;
+      --grey-text:   #666666;
+      --mono:        'Courier New', Courier, monospace;
+      --serif:       Georgia, 'Times New Roman', serif;
+    }
+
+    /* ── Reset ─────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--black);
+      color: var(--white);
+      font-family: var(--mono);
+      overflow-x: hidden;
+      cursor: crosshair;
+    }
+
+    ::selection { background: var(--red); color: var(--black); }
+
+    /* ── Scanline overlay ──────────────────────────────────── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(255,255,255,0.012) 2px,
+        rgba(255,255,255,0.012) 4px
+      );
+      pointer-events: none;
+      z-index: 9999;
+    }
+
+    /* ── Noise grain ───────────────────────────────────────── */
+    body::after {
+      content: '';
+      position: fixed; inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 9998;
+      opacity: 0.4;
+    }
+
+    /* ── NAV ───────────────────────────────────────────────── */
+    nav {
+      position: fixed; top: 0; left: 0; right: 0;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 1.25rem 2.5rem;
+      border-bottom: 1px solid #111;
+      background: rgba(0,0,0,0.92);
+      backdrop-filter: blur(12px);
+      z-index: 100;
+    }
+
+    .nav-logo {
+      font-family: var(--serif);
+      font-size: 1.1rem;
+      letter-spacing: 0.3em;
+      text-transform: uppercase;
+    }
+    .nav-logo span { color: var(--red); }
+
+    .nav-links { display: flex; gap: 2rem; align-items: center; }
+
+    .nav-links a {
+      font-size: 0.7rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--grey-text);
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+    .nav-links a:hover { color: var(--white); }
+
+    .nav-cta {
+      font-size: 0.65rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      padding: 0.55rem 1.3rem;
+      border: 1px solid var(--red);
+      color: var(--red);
+      background: transparent;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-family: var(--mono);
+    }
+    .nav-cta:hover { background: var(--red); color: var(--black); }
+
+    /* ── HERO ──────────────────────────────────────────────── */
+    #hero {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 6rem 2rem 4rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Red corner glow */
+    .glow-tl {
+      position: absolute; top: -200px; left: -200px;
+      width: 600px; height: 600px;
+      background: radial-gradient(circle, rgba(255,26,26,0.08) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .glow-br {
+      position: absolute; bottom: -200px; right: -200px;
+      width: 500px; height: 500px;
+      background: radial-gradient(circle, rgba(255,26,26,0.05) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    /* Animated grid */
+    .grid-bg {
+      position: absolute; inset: 0;
+      background-image:
+        linear-gradient(rgba(255,26,26,0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,26,26,0.04) 1px, transparent 1px);
+      background-size: 60px 60px;
+      animation: gridPan 40s linear infinite;
+      pointer-events: none;
+    }
+    @keyframes gridPan {
+      0%   { background-position: 0 0; }
+      100% { background-position: 60px 60px; }
+    }
+
+    .hero-eyebrow {
+      font-size: 0.65rem;
+      letter-spacing: 0.45em;
+      text-transform: uppercase;
+      color: var(--red);
+      margin-bottom: 2rem;
+      opacity: 0;
+      animation: fadeUp 0.8s ease forwards 0.2s;
+    }
+
+    .hero-headline {
+      font-family: var(--serif);
+      font-size: clamp(3rem, 9vw, 8rem);
+      line-height: 0.92;
+      text-align: center;
+      letter-spacing: -0.02em;
+      max-width: 1000px;
+      opacity: 0;
+      animation: fadeUp 0.8s ease forwards 0.4s;
+    }
+
+    .hero-headline em {
+      font-style: italic;
+      color: var(--red);
+    }
+
+    .hero-sub {
+      margin-top: 2.5rem;
+      font-size: 0.8rem;
+      color: var(--grey-text);
+      letter-spacing: 0.12em;
+      text-align: center;
+      max-width: 520px;
+      line-height: 1.8;
+      opacity: 0;
+      animation: fadeUp 0.8s ease forwards 0.6s;
+    }
+
+    .hero-actions {
+      margin-top: 3rem;
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      justify-content: center;
+      opacity: 0;
+      animation: fadeUp 0.8s ease forwards 0.8s;
+    }
+
+    .btn-primary {
+      padding: 0.9rem 2.8rem;
+      background: var(--red);
+      color: var(--black);
+      border: none;
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: all 0.2s;
+      position: relative;
+      overflow: hidden;
+    }
+    .btn-primary::after {
+      content: '';
+      position: absolute; inset: 0;
+      background: var(--white);
+      transform: scaleX(0);
+      transform-origin: right;
+      transition: transform 0.3s ease;
+    }
+    .btn-primary:hover::after { transform: scaleX(1); transform-origin: left; }
+    .btn-primary:hover { color: var(--black); }
+    .btn-primary span { position: relative; z-index: 1; }
+
+    .btn-ghost {
+      padding: 0.9rem 2.8rem;
+      background: transparent;
+      color: var(--white);
+      border: 1px solid #333;
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-ghost:hover { border-color: var(--white); }
+
+    /* Ticker */
+    .hero-ticker {
+      margin-top: 4rem;
+      border-top: 1px solid #111;
+      border-bottom: 1px solid #111;
+      padding: 0.8rem 0;
+      overflow: hidden;
+      width: 100%;
+      max-width: 900px;
+      opacity: 0;
+      animation: fadeUp 0.8s ease forwards 1s;
+    }
+    .ticker-track {
+      display: flex;
+      gap: 4rem;
+      white-space: nowrap;
+      animation: ticker 30s linear infinite;
+    }
+    .ticker-track span {
+      font-size: 0.6rem;
+      letter-spacing: 0.3em;
+      text-transform: uppercase;
+      color: var(--grey-text);
+    }
+    .ticker-track span.red { color: var(--red); }
+    @keyframes ticker {
+      from { transform: translateX(0); }
+      to   { transform: translateX(-50%); }
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(24px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── MODES SECTION ─────────────────────────────────────── */
+    #modes {
+      padding: 8rem 2rem;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .section-label {
+      font-size: 0.62rem;
+      letter-spacing: 0.45em;
+      text-transform: uppercase;
+      color: var(--red);
+      margin-bottom: 1.5rem;
+    }
+
+    .section-title {
+      font-family: var(--serif);
+      font-size: clamp(2rem, 5vw, 3.5rem);
+      line-height: 1.05;
+      margin-bottom: 4rem;
+      max-width: 500px;
+    }
+
+    .modes-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1px;
+      background: #111;
+      border: 1px solid #111;
+    }
+
+    .mode-card {
+      background: var(--black);
+      padding: 2.5rem;
+      position: relative;
+      overflow: hidden;
+      transition: background 0.3s;
+      cursor: default;
+    }
+    .mode-card::before {
+      content: '';
+      position: absolute; top: 0; left: 0;
+      width: 3px; height: 0;
+      background: var(--red);
+      transition: height 0.4s ease;
+    }
+    .mode-card:hover { background: #080808; }
+    .mode-card:hover::before { height: 100%; }
+
+    .mode-tag {
+      display: inline-block;
+      font-size: 0.58rem;
+      letter-spacing: 0.3em;
+      text-transform: uppercase;
+      padding: 0.25rem 0.6rem;
+      border: 1px solid #222;
+      color: var(--grey-text);
+      margin-bottom: 1.5rem;
+    }
+    .mode-tag.pro { border-color: var(--red-dim); color: var(--red); }
+
+    .mode-name {
+      font-family: var(--serif);
+      font-size: 1.4rem;
+      margin-bottom: 0.8rem;
+    }
+
+    .mode-desc {
+      font-size: 0.72rem;
+      line-height: 1.8;
+      color: var(--grey-text);
+    }
+
+    .mode-num {
+      position: absolute;
+      bottom: 1.5rem; right: 2rem;
+      font-size: 4rem;
+      color: #0d0d0d;
+      font-family: var(--serif);
+      line-height: 1;
+      user-select: none;
+    }
+
+    /* ── PHILOSOPHY ────────────────────────────────────────── */
+    #philosophy {
+      padding: 8rem 2rem;
+      border-top: 1px solid #111;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+    #philosophy .big-quote {
+      font-family: var(--serif);
+      font-size: clamp(1.6rem, 4vw, 3rem);
+      line-height: 1.3;
+      max-width: 800px;
+      margin: 0 auto 2rem;
+    }
+    #philosophy .big-quote em { color: var(--red); font-style: italic; }
+    #philosophy .attribution {
+      font-size: 0.65rem;
+      letter-spacing: 0.3em;
+      color: var(--grey-text);
+      text-transform: uppercase;
+    }
+
+    /* ── STATS BAR ─────────────────────────────────────────── */
+    #stats {
+      border-top: 1px solid #111;
+      border-bottom: 1px solid #111;
+      display: flex;
+      flex-wrap: wrap;
+    }
+    .stat-block {
+      flex: 1; min-width: 160px;
+      padding: 2.5rem 2rem;
+      border-right: 1px solid #111;
+      text-align: center;
+    }
+    .stat-block:last-child { border-right: none; }
+    .stat-num {
+      font-family: var(--serif);
+      font-size: 2.8rem;
+      color: var(--red);
+      display: block;
+    }
+    .stat-label {
+      font-size: 0.6rem;
+      letter-spacing: 0.25em;
+      text-transform: uppercase;
+      color: var(--grey-text);
+      margin-top: 0.5rem;
+    }
+
+    /* ── AUTH MODAL ────────────────────────────────────────── */
+    .modal-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.93);
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s;
+      backdrop-filter: blur(4px);
+    }
+    .modal-overlay.active {
+      opacity: 1;
+      pointer-events: all;
+    }
+
+    .modal {
+      background: var(--black);
+      border: 1px solid #222;
+      width: 100%;
+      max-width: 420px;
+      padding: 2.5rem;
+      position: relative;
+      transform: translateY(20px);
+      transition: transform 0.3s;
+    }
+    .modal-overlay.active .modal { transform: translateY(0); }
+
+    .modal-close {
+      position: absolute; top: 1rem; right: 1.2rem;
+      background: none; border: none;
+      color: var(--grey-text); font-size: 1.2rem;
+      cursor: pointer; font-family: var(--mono);
+      transition: color 0.2s;
+    }
+    .modal-close:hover { color: var(--red); }
+
+    .modal-eyebrow {
+      font-size: 0.6rem;
+      letter-spacing: 0.4em;
+      text-transform: uppercase;
+      color: var(--red);
+      margin-bottom: 1rem;
+    }
+
+    .modal-title {
+      font-family: var(--serif);
+      font-size: 1.8rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .modal-sub {
+      font-size: 0.7rem;
+      color: var(--grey-text);
+      margin-bottom: 2rem;
+      line-height: 1.7;
+    }
+
+    /* Tabs */
+    .auth-tabs {
+      display: flex;
+      border-bottom: 1px solid #1a1a1a;
+      margin-bottom: 1.8rem;
+    }
+    .auth-tab {
+      flex: 1;
+      background: none; border: none;
+      font-family: var(--mono);
+      font-size: 0.68rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--grey-text);
+      padding: 0.8rem;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      transition: all 0.2s;
+    }
+    .auth-tab.active { color: var(--white); border-bottom-color: var(--red); }
+
+    /* Fields */
+    .field { margin-bottom: 1rem; }
+    .field label {
+      display: block;
+      font-size: 0.6rem;
+      letter-spacing: 0.25em;
+      text-transform: uppercase;
+      color: var(--grey-text);
+      margin-bottom: 0.5rem;
+    }
+    .field input {
+      width: 100%;
+      background: var(--grey-dim);
+      border: 1px solid #222;
+      color: var(--white);
+      font-family: var(--mono);
+      font-size: 0.8rem;
+      padding: 0.75rem 1rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .field input:focus { border-color: var(--red); }
+
+    .auth-submit {
+      width: 100%;
+      margin-top: 1.5rem;
+      padding: 0.9rem;
+      background: var(--red);
+      color: var(--black);
+      border: none;
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+    .auth-submit:hover { opacity: 0.85; }
+    .auth-submit:disabled { opacity: 0.4; cursor: wait; }
+
+    .auth-msg {
+      margin-top: 1rem;
+      font-size: 0.68rem;
+      line-height: 1.6;
+      min-height: 1.4rem;
+      text-align: center;
+    }
+    .auth-msg.error { color: var(--red); }
+    .auth-msg.success { color: #00ff88; }
+
+    /* ── FOOTER ────────────────────────────────────────────── */
+    footer {
+      border-top: 1px solid #111;
+      padding: 2rem 2.5rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .footer-logo {
+      font-family: var(--serif);
+      font-size: 0.9rem;
+      letter-spacing: 0.25em;
+    }
+    .footer-logo span { color: var(--red); }
+    .footer-note {
+      font-size: 0.58rem;
+      color: var(--grey-text);
+      letter-spacing: 0.15em;
+    }
+
+    /* ── RESPONSIVE ────────────────────────────────────────── */
+    @media (max-width: 640px) {
+      nav { padding: 1rem 1.2rem; }
+      .nav-links { display: none; }
+      .hero-headline { font-size: clamp(2.2rem, 12vw, 4rem); }
+      .modes-grid { grid-template-columns: 1fr; }
+      .stat-block { min-width: 50%; border-right: none; border-bottom: 1px solid #111; }
+      footer { flex-direction: column; text-align: center; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- NAV -->
+  <nav>
+    <div class="nav-logo">ZAOUJAL<span>.</span>AI</div>
+    <div class="nav-links">
+      <a href="#modes">Modes</a>
+      <a href="#philosophy">Manifesto</a>
+      <button class="nav-cta" onclick="openModal()">ENTER SYSTEM</button>
+    </div>
+    <button class="nav-cta" style="display:none" id="nav-mobile-cta" onclick="openModal()">ENTER</button>
+  </nav>
+
+  <!-- HERO -->
+  <section id="hero">
+    <div class="glow-tl"></div>
+    <div class="glow-br"></div>
+    <div class="grid-bg"></div>
+
+    <p class="hero-eyebrow">// CLASSIFIED INTELLIGENCE SYSTEM — v2.0</p>
+
+    <h1 class="hero-headline">
+      Your ideas<br>deserve<br><em>brutal</em> truth.
+    </h1>
+
+    <p class="hero-sub">
+      An AI auditor that doesn't flatter you.<br>
+      It dissects. It exposes. It shreds logic errors<br>
+      you've been too comfortable to notice.
+    </p>
+
+    <div class="hero-actions">
+      <button class="btn-primary" onclick="openModal()">
+        <span>REQUEST ACCESS</span>
+      </button>
+      <button class="btn-ghost" onclick="document.getElementById('modes').scrollIntoView({behavior:'smooth'})">
+        VIEW MODES
+      </button>
+    </div>
+
+    <div class="hero-ticker">
+      <div class="ticker-track" id="ticker">
+        <span class="red">BUSINESS AUDITOR</span>
+        <span>//</span>
+        <span>IDEA SHREDDER</span>
+        <span>//</span>
+        <span class="red">PLAN SNIPER</span>
+        <span>//</span>
+        <span>FUN ROAST</span>
+        <span>//</span>
+        <span class="red">PRO CREDITS SYSTEM</span>
+        <span>//</span>
+        <span>MULTI-LANGUAGE</span>
+        <span>//</span>
+        <span class="red">BRUTAL LOGIC ENGINE</span>
+        <span>//</span>
+        <!-- repeat for seamless loop -->
+        <span class="red">BUSINESS AUDITOR</span>
+        <span>//</span>
+        <span>IDEA SHREDDER</span>
+        <span>//</span>
+        <span class="red">PLAN SNIPER</span>
+        <span>//</span>
+        <span>FUN ROAST</span>
+        <span>//</span>
+        <span class="red">PRO CREDITS SYSTEM</span>
+        <span>//</span>
+        <span>MULTI-LANGUAGE</span>
+        <span>//</span>
+        <span class="red">BRUTAL LOGIC ENGINE</span>
+        <span>//</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- STATS -->
+  <div id="stats">
+    <div class="stat-block">
+      <span class="stat-num">4</span>
+      <span class="stat-label">Audit Modes</span>
+    </div>
+    <div class="stat-block">
+      <span class="stat-num">120B</span>
+      <span class="stat-label">Pro Model Params</span>
+    </div>
+    <div class="stat-block">
+      <span class="stat-num">0%</span>
+      <span class="stat-label">Diplomatic Filter</span>
+    </div>
+    <div class="stat-block">
+      <span class="stat-num">∞</span>
+      <span class="stat-label">Fast Mode Calls</span>
+    </div>
+  </div>
+
+  <!-- MODES -->
+  <section id="modes">
+    <p class="section-label">// OPERATIONAL MODES</p>
+    <h2 class="section-title">Four weapons.<br>One purpose.</h2>
+
+    <div class="modes-grid">
+      <div class="mode-card">
+        <span class="mode-tag pro">PRO — 1 CREDIT</span>
+        <h3 class="mode-name">Business Auditor</h3>
+        <p class="mode-desc">Runs a cynical financial and strategic teardown of your business model. Exposes vanity metrics, weak moats, and dead-end unit economics without mercy.</p>
+        <span class="mode-num">01</span>
+      </div>
+      <div class="mode-card">
+        <span class="mode-tag pro">PRO — 1 CREDIT</span>
+        <h3 class="mode-name">Idea Shredder</h3>
+        <p class="mode-desc">High-IQ analysis of your startup idea. It finds the assumption you haven't tested, the market you misunderstood, and the competitor you ignored.</p>
+        <span class="mode-num">02</span>
+      </div>
+      <div class="mode-card">
+        <span class="mode-tag">FAST — FREE</span>
+        <h3 class="mode-name">Plan Sniper</h3>
+        <p class="mode-desc">Strategic sniper mode. Identifies single-point failures in your plan with surgical precision. No padding. No "on the other hand." Just the kill shot.</p>
+        <span class="mode-num">03</span>
+      </div>
+      <div class="mode-card">
+        <span class="mode-tag">FAST — FREE</span>
+        <h3 class="mode-name">Fun Roast</h3>
+        <p class="mode-desc">Your idea, roasted in the style of a brutally honest investor who's seen it all. Entertaining. Devastating. Educational by accident.</p>
+        <span class="mode-num">04</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- PHILOSOPHY -->
+  <section id="philosophy">
+    <p class="section-label">// SYSTEM MANIFESTO</p>
+    <p class="big-quote">
+      "The world doesn't need another AI that tells you<br>
+      your idea is <em>interesting.</em><br>
+      It needs one that tells you why it will <em>fail."</em>
+    </p>
+    <p class="attribution">— Zaoujal Intelligence, Core Directive 001</p>
+  </section>
+
+  <!-- FOOTER -->
+  <footer>
+    <div class="footer-logo">ZAOUJAL<span>.</span>AI</div>
+    <p class="footer-note">// CLASSIFIED — AUTHORIZED USERS ONLY — ALL SESSIONS LOGGED</p>
+  </footer>
+
+  <!-- AUTH MODAL -->
+  <div class="modal-overlay" id="authModal">
+    <div class="modal">
+      <button class="modal-close" onclick="closeModal()">✕</button>
+      <p class="modal-eyebrow">// AUTHENTICATION REQUIRED</p>
+      <h2 class="modal-title">System Access</h2>
+      <p class="modal-sub">Authorized personnel only.<br>10 Pro Credits issued on first entry.</p>
+
+      <div class="auth-tabs">
+        <button class="auth-tab active" onclick="switchTab('login')">LOG IN</button>
+        <button class="auth-tab" onclick="switchTab('signup')">REGISTER</button>
+      </div>
+
+      <!-- Login Form -->
+      <div id="loginForm">
+        <div class="field">
+          <label>Email</label>
+          <input type="email" id="loginEmail" placeholder="operator@domain.com" />
+        </div>
+        <div class="field">
+          <label>Password</label>
+          <input type="password" id="loginPass" placeholder="••••••••" />
+        </div>
+        <button class="auth-submit" id="loginBtn" onclick="handleLogin()">
+          AUTHENTICATE
+        </button>
+      </div>
+
+      <!-- Signup Form -->
+      <div id="signupForm" style="display:none">
+        <div class="field">
+          <label>Email</label>
+          <input type="email" id="signupEmail" placeholder="operator@domain.com" />
+        </div>
+        <div class="field">
+          <label>Password</label>
+          <input type="password" id="signupPass" placeholder="Min. 8 characters" />
+        </div>
+        <button class="auth-submit" id="signupBtn" onclick="handleSignup()">
+          REQUEST ACCESS
+        </button>
+      </div>
+
+      <p class="auth-msg" id="authMsg"></p>
+    </div>
+  </div>
+
+  <script>
+    /* ── CONFIG — Replace with your Supabase credentials ─── */
+    const SUPABASE_URL = 'https://YOUR_PROJECT.supabase.co';
+    const SUPABASE_ANON = 'YOUR_ANON_KEY';
+
+    const { createClient } = supabase;
+    const sb = createClient(SUPABASE_URL, SUPABASE_ANON);
+
+    /* ── Mobile nav CTA ───────────────────────────────────── */
+    if (window.innerWidth <= 640) {
+      document.getElementById('nav-mobile-cta').style.display = 'block';
+    }
+
+    /* ── Check existing session ───────────────────────────── */
+    (async () => {
+      const { data: { session } } = await sb.auth.getSession();
+      if (session) {
+        window.location.href = 'app.html';
+      }
+    })();
+
+    /* ── Modal ────────────────────────────────────────────── */
+    function openModal() {
+      document.getElementById('authModal').classList.add('active');
+      document.body.style.overflow = 'hidden';
+    }
+    function closeModal() {
+      document.getElementById('authModal').classList.remove('active');
+      document.body.style.overflow = '';
+    }
+    document.getElementById('authModal').addEventListener('click', function(e) {
+      if (e.target === this) closeModal();
+    });
+
+    /* ── Tab switch ───────────────────────────────────────── */
+    function switchTab(tab) {
+      const tabs = document.querySelectorAll('.auth-tab');
+      tabs.forEach(t => t.classList.remove('active'));
+      event.target.classList.add('active');
+      document.getElementById('loginForm').style.display  = tab === 'login'  ? 'block' : 'none';
+      document.getElementById('signupForm').style.display = tab === 'signup' ? 'block' : 'none';
+      setMsg('', '');
+    }
+
+    function setMsg(text, type) {
+      const el = document.getElementById('authMsg');
+      el.textContent = text;
+      el.className = 'auth-msg ' + (type || '');
+    }
+
+    /* ── Login ────────────────────────────────────────────── */
+    async function handleLogin() {
+      const email = document.getElementById('loginEmail').value.trim();
+      const pass  = document.getElementById('loginPass').value;
+      if (!email || !pass) { setMsg('All fields required.', 'error'); return; }
+
+      const btn = document.getElementById('loginBtn');
+      btn.disabled = true; btn.textContent = 'AUTHENTICATING...';
+
+      const { error } = await sb.auth.signInWithPassword({ email, password: pass });
+
+      if (error) {
+        setMsg(error.message, 'error');
+        btn.disabled = false; btn.textContent = 'AUTHENTICATE';
+      } else {
+        setMsg('Access granted. Redirecting...', 'success');
+        setTimeout(() => window.location.href = 'app.html', 1000);
+      }
+    }
+
+    /* ── Signup ───────────────────────────────────────────── */
+    async function handleSignup() {
+      const email = document.getElementById('signupEmail').value.trim();
+      const pass  = document.getElementById('signupPass').value;
+      if (!email || !pass) { setMsg('All fields required.', 'error'); return; }
+      if (pass.length < 8)  { setMsg('Password min. 8 characters.', 'error'); return; }
+
+      const btn = document.getElementById('signupBtn');
+      btn.disabled = true; btn.textContent = 'PROCESSING...';
+
+      const { error } = await sb.auth.signUp({ email, password: pass });
+
+      if (error) {
+        setMsg(error.message, 'error');
+        btn.disabled = false; btn.textContent = 'REQUEST ACCESS';
+      } else {
+        setMsg('// REGISTRATION COMPLETE. Check your email to confirm access.', 'success');
+        btn.disabled = false; btn.textContent = 'REQUEST ACCESS';
+      }
+    }
+
+    /* ── ESC key to close ─────────────────────────────────── */
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+  </script>
+</body>
+</html>
